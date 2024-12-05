@@ -1,70 +1,133 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
 import streamlit as st
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from captum.attr import visualization as viz, LayerIntegratedGradients
+import torch
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-class AttentionDashboard:
-    def __init__(self, model_name):
-        """Initialize the dashboard with a Hugging Face model."""
-        self.model_name = model_name
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(model_name, output_attentions=True)
-        self.model.eval()
-        self.tokens = None
-        self.attentions = None
+class TransformerAttentionApp:
+    def __init__(self):
+        st.title("Transformer Attention and Embedding Visualization")
+        self.initialize_session()
 
-    def compute_attention(self, input_text, max_length=50):
-        """Run the model and extract attention weights over the generation process."""
-        inputs = self.tokenizer(input_text, return_tensors="pt")
-        outputs = self.model.generate(
-            **inputs,
-            max_length=max_length,
+    def initialize_session(self):
+        if 'model' not in st.session_state:
+            st.session_state['model'] = None
+        if 'tokenizer' not in st.session_state:
+            st.session_state['tokenizer'] = None
+        if 'attentions' not in st.session_state:
+            st.session_state['attentions'] = None
+        if 'tokens' not in st.session_state:
+            st.session_state['tokens'] = None
+        if 'input_text' not in st.session_state:
+            st.session_state['input_text'] = ""
+
+    def load_model(self, model_path):
+        """Load model and tokenizer."""
+        try:
+            st.session_state['tokenizer'] = AutoTokenizer.from_pretrained(model_path)
+            st.session_state['model'] = AutoModelForCausalLM.from_pretrained(model_path, output_attentions=True).to("cuda")
+            st.session_state['model'].eval()
+            st.success("Model loaded successfully!")
+        except Exception as e:
+            st.error(f"Error loading model: {e}")
+
+    def compute_attention(self, input_text, max_new_tokens=50, temperature=1.0):
+        """Generate output and capture attention states."""
+        tokenizer = st.session_state['tokenizer']
+        model = st.session_state['model']
+
+        outputs = model.generate(
+            input_text,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
             output_attentions=True,
             return_dict_in_generate=True
         )
-        self.attentions = outputs.decoder_attentions if hasattr(outputs, "decoder_attentions") else outputs.attentions
-        self.tokens = self.tokenizer.convert_ids_to_tokens(outputs.sequences[0])
+        st.session_state['attentions'] = outputs.attentions
+        st.session_state['tokens'] = tokenizer.convert_ids_to_tokens(outputs.sequences[0])
 
-    def visualize_attention(self, layer, head, step):
-        """Generate a heatmap for attention weights dynamically."""
-        if self.attentions is None or self.tokens is None:
-            st.error("No attentions computed yet. Please analyze a prompt first.")
+        # Decode and store raw output
+        st.session_state['output_text'] = tokenizer.decode(outputs.sequences[0], skip_special_tokens=True)
+
+    def visualize_attention(self):
+        """Visualize attention weights for each layer and head."""
+        attentions = st.session_state['attentions']
+        tokens = st.session_state['tokens']
+
+        if attentions is None or tokens is None:
+            st.error("No attentions computed. Please run a sequence first.")
             return
+        layer = st.slider("Select Layer", 0, st.session_state["model"].config.num_hidden_layers - 1, 0)
+        head = st.slider("Select Head", 0, st.session_state["model"].config.num_attention_heads - 1, 0)
 
-        # Access attention for the first step of generation
-        attention_weights = self.attentions[layer][0][head][step].detach().numpy()
-
+        attention_weights = attentions[layer][0][head].detach().cpu().numpy()
         plt.figure(figsize=(12, 10))
-        sns.heatmap(attention_weights,
-                    xticklabels=self.tokens,
-                    yticklabels=self.tokens,
-                    cmap="viridis",
-                    annot=False)
+        sns.heatmap(
+            attention_weights[-1],
+            xticklabels=tokens, 
+            yticklabels=tokens, 
+            cmap="viridis",
+            annot=False
+        )
         plt.title(f"Attention Heatmap - Layer {layer}, Head {head}")
         st.pyplot(plt)
 
-    def run_dashboard(self):
-        """Launch the Streamlit dashboard."""
-        st.title("Transformer Attention Dashboard for Meta LLaMA")
-        st.write("Explore attention mechanisms in Meta's LLaMA model during text generation.")
+    def visualize_word_importance(self):
+        """Visualize word importance using LayerIntegratedGradients from Captum."""
+        torch.cuda.empty_cache()
+        model = st.session_state['model']
+        tokenizer = st.session_state['tokenizer']
+        input_text = st.session_state['input_text']
 
-        # User inputs
-        input_text = st.text_area("Enter text prompt:", "The future of AI is")
-        max_length = st.slider("Max Generation Length", 10, 100, 50)
+        if input_text == "" or model is None or tokenizer is None:
+            st.error("No input text or model to visualize. Please load a model and enter a sequence.")
+            return
 
-        if st.button("Analyze Attention"):
-            with st.spinner("Computing attention..."):
-                self.compute_attention(input_text, max_length=max_length)
-                st.write(f"Generated Tokens: {self.tokens}")
+        def forward_func(inputs):
+            return model(inputs).logits
 
-        layer = st.slider("Select Layer", 0, self.model.config.num_hidden_layers - 1, 0)
-        head = st.slider("Select Head", 0, self.model.config.num_attention_heads - 1, 0)
+        inputs = st.session_state["inputs"]
+        lig = LayerIntegratedGradients(forward_func, model.get_input_embeddings())
+        attributions, _ = lig.attribute(inputs, return_convergence_delta=True)
 
-        if self.attentions is not None:
-            step = 14
-            self.visualize_attention(layer, head, step)
+        # Visualize word importance
+        tokens = tokenizer.convert_ids_to_tokens(inputs['input_ids'][0])
+        attributions_sum = attributions.sum(dim=-1).squeeze(0).detach().cpu().numpy()
+        plt.figure(figsize=(12, 8))
+        sns.barplot(x=tokens, y=attributions_sum, palette="coolwarm")
+        plt.title("Word Importance Visualization")
+        plt.xlabel("Tokens")
+        plt.ylabel("Attribution Scores")
+        plt.xticks(rotation=90)
+        st.pyplot(plt)
+
+    def run(self):
+        """Run the Streamlit app."""
+        model_path = st.text_input("Enter the path to a Hugging Face model:", value="")
+
+        if st.button("Load Model") and model_path:
+            with st.spinner("Loading model..."):
+                self.load_model(model_path)
+
+        if st.session_state['model'] is not None:
+            st.session_state['input_text'] = st.text_area("Enter text prompt:", st.session_state['input_text'])
+            max_new_tokens = st.slider("Max New Tokens", 10, 100, 50)
+            temperature = st.slider("Temperature", 0.1, 2.0, 1.0, step=0.1)
+
+            if st.button("Generate Attention"):
+                with st.spinner("Generating and computing attentions..."):
+                    messages = [{"role": "user", "content": st.session_state['input_text']}]
+                    input_text = st.session_state['tokenizer'].apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+                    inputs = st.session_state['tokenizer'].encode(input_text, return_tensors="pt").to("cuda")
+                    st.session_state["inputs"] = inputs
+                    self.compute_attention(inputs, max_new_tokens=max_new_tokens, temperature=temperature)
+                    st.write(f"Generated Output: {st.session_state['output_text']}")
+
+            # Visualizations
+            self.visualize_attention()
+            self.visualize_word_importance()
 
 if __name__ == "__main__":
-    dashboard = AttentionDashboard(model_name="HuggingFaceTB/SmolLM2-360M-Instruct")
-    dashboard.run_dashboard()
+    app = TransformerAttentionApp()
+    app.run()
