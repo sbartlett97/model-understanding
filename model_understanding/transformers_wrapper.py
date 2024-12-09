@@ -5,7 +5,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification, Auto
 
 device = torch.device("cuda")
 
-
+#TODO: Finish condensing re-used code into a base class
 class BaseVisualiser:
     model = None
     tokenizer = None
@@ -52,14 +52,11 @@ class ModelVisualizer:
         logits = outputs.logits
         predicted_class = torch.argmax(logits, dim=1)
 
-        # self.model.zero_grad()
         logits[0, predicted_class].backward()
 
-        # Compute saliency map
         gradients = embeddings.grad.abs().mean(dim=-1).squeeze()
         saliency_map = gradients / gradients.max()  # Normalize
 
-        # Convert tokens back to text
         tokens = self.tokenizer.convert_ids_to_tokens(input_ids.squeeze().tolist())
 
         return tokens, saliency_map
@@ -90,22 +87,17 @@ class ModelVisualizer:
             tokens (list): List of tokens.
             attention_weights (torch.Tensor): Average attention weights (seq_len x seq_len).
         """
-        # Tokenize input text
         inputs = self.tokenizer(text, return_tensors="pt").to(device)
         input_ids = inputs["input_ids"]
         attention_mask = inputs["attention_mask"]
 
-        # Forward pass with attention outputs
         outputs = self.model(input_ids, attention_mask=attention_mask, output_attentions=True)
         attention_weights = outputs.attentions
 
-        # Extract attention from the last layer
-        last_layer_attention = attention_weights[-1].squeeze().detach().cpu()  # (num_heads, seq_len, seq_len)
+        last_layer_attention = attention_weights[-1].squeeze().detach().cpu()
 
-        # Average across attention heads
         avg_attention = last_layer_attention.mean(dim=0)  # (seq_len, seq_len)
 
-        # Convert tokens back to text
         tokens = self.tokenizer.convert_ids_to_tokens(input_ids.squeeze().tolist())
 
         return tokens, avg_attention
@@ -134,12 +126,10 @@ class ModelVisualizer:
         Args:
             text (str): Input text to analyze.
         """
-        # Saliency Analysis
         tokens, saliency_map = self.compute_saliency(text)
         print("\nSaliency Analysis:")
         self.plot_saliency(tokens, saliency_map)
 
-        # Attention Analysis
         tokens, attention_weights = self.compute_attention(text)
         print("\nAttention Analysis:")
         self.plot_attention(tokens, attention_weights)
@@ -178,7 +168,7 @@ class GenerativeModelVisualizer:
 
         embeddings.retain_grad()
         embeddings.requires_grad_()
-        # Forward pass
+
         outputs = self.model(inputs_embeds=embeddings)
         logits = outputs.logits
 
@@ -187,14 +177,11 @@ class GenerativeModelVisualizer:
 
         next_token = self.tokenizer.decode(next_token_id)
         print(next_token)
-        # self.model.zero_grad()
         predicted_logit.backward()
 
-        # Compute saliency map
         gradients = embeddings.grad.abs().squeeze()
-        saliency_map = gradients / gradients.max()  # Normalize
+        saliency_map = gradients / gradients.max()
 
-        # Convert tokens back to text
         tokens = self.tokenizer.convert_ids_to_tokens(input_ids.squeeze().tolist())
 
         return tokens, saliency_map
@@ -210,21 +197,16 @@ class GenerativeModelVisualizer:
             tokens (list): List of tokens.
             attention_weights (torch.Tensor): Attention weights (seq_len x seq_len).
         """
-        # Tokenize input prompt
         inputs = self.tokenizer(prompt, return_tensors="pt")
         input_ids = inputs["input_ids"]
 
-        # Forward pass with attention outputs
         outputs = self.model(input_ids, output_attentions=True)
         attention_weights = outputs.attentions
 
-        # Extract attention from the last layer
-        last_layer_attention = attention_weights[-1].squeeze().detach().cpu()  # (num_heads, seq_len, seq_len)
+        last_layer_attention = attention_weights[-1].squeeze().detach().cpu()
 
-        # Average across attention heads
-        avg_attention = last_layer_attention.mean(dim=0)  # (seq_len, seq_len)
+        avg_attention = last_layer_attention.mean(dim=0)
 
-        # Convert tokens back to text
         tokens = self.tokenizer.convert_ids_to_tokens(input_ids.squeeze().tolist())
 
         return tokens, avg_attention
@@ -268,12 +250,10 @@ class GenerativeModelVisualizer:
         Args:
             prompt (str): Input text prompt to analyze.
         """
-        # Saliency Analysis
         tokens, saliency_map = self.compute_saliency(prompt)
         print("\nSaliency Analysis:")
         self.plot_saliency(tokens, saliency_map)
 
-        # Attention Analysis
         tokens, attention_weights = self.compute_attention(prompt)
         print("\nAttention Analysis:")
         self.plot_attention(tokens, attention_weights)
