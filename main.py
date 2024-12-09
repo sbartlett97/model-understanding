@@ -1,4 +1,4 @@
-from model_understanding import
+from model_understanding import ModelVisualizer, GenerativeModelVisualizer
 
 if __name__ == "__main__":
     # Classification Example
