@@ -1,1 +1,1 @@
-from transformers_wrapper import ModelVisualizer, GenerativeModelVisualizer
+from .transformers_wrapper import ModelVisualizer, GenerativeModelVisualizer

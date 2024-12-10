@@ -9,4 +9,4 @@ if __name__ == "__main__":
     # Generative Example
     gen_visualizer = GenerativeModelVisualizer("HuggingFaceTB/SmolLM2-360M")
     prompt = "Once upon a time in a land far away,"
-    gen_visualizer.analyze(prompt)
+    gen_visualizer.analyze(prompt, max_new_tokens=10)

@@ -183,8 +183,9 @@ class GenerativeModelVisualizer:
         saliency_map = gradients / gradients.max()
 
         tokens = self.tokenizer.convert_ids_to_tokens(input_ids.squeeze().tolist())
-
-        return tokens, saliency_map
+        tokens += self.tokenizer.convert_ids_to_tokens([next_token_id])
+        gen_text = self.tokenizer.decode(self.tokenizer.convert_tokens_to_ids(tokens))
+        return tokens, saliency_map, gen_text
 
     def compute_attention(self, prompt):
         """
@@ -211,7 +212,7 @@ class GenerativeModelVisualizer:
 
         return tokens, avg_attention
 
-    def plot_saliency(self, tokens, saliency_map):
+    def plot_saliency(self, tokens, saliency_map, iteration):
         """
         Plot the saliency map for the given tokens.
 
@@ -223,7 +224,7 @@ class GenerativeModelVisualizer:
         plt.bar(tokens, saliency_map.mean(dim=1).detach().cpu().numpy())
         plt.xticks(rotation=90)
         plt.title("Saliency Map")
-        plt.savefig("generation_saliency_map.png")
+        plt.savefig(f"generation_saliency_map_{iteration}.png")
         plt.close()
 
     def plot_attention(self, tokens, attention_weights):
@@ -243,16 +244,24 @@ class GenerativeModelVisualizer:
         plt.savefig("generation_attention_fig.png")
         plt.close()
 
-    def analyze(self, prompt):
+    def analyze(self, prompt, max_new_tokens=50):
         """
         Perform both saliency and attention analysis for a given generative model prompt.
 
         Args:
             prompt (str): Input text prompt to analyze.
+            max_new_tokens (int): Maximum number of generated tokens
         """
-        tokens, saliency_map = self.compute_saliency(prompt)
+        saliency_maps = []
+        token_history = []
+        for _ in range(max_new_tokens):
+            tokens, saliency_map, gen_text = self.compute_saliency(prompt)
+            prompt = gen_text
+            saliency_maps.append(saliency_map)
+            token_history.append(tokens[:-1])
         print("\nSaliency Analysis:")
-        self.plot_saliency(tokens, saliency_map)
+        for i in range(max_new_tokens):
+            self.plot_saliency(token_history[i], saliency_maps[i], i)
 
         tokens, attention_weights = self.compute_attention(prompt)
         print("\nAttention Analysis:")
