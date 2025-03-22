@@ -4,6 +4,7 @@ from model_understanding.transformers_wrapper import (
     Seq2SeqVisualizer
 )
 import os
+import torch
 
 def main():
     # Create base visualization directory
@@ -13,6 +14,9 @@ def main():
     os.makedirs("visualizations/classification", exist_ok=True)
     os.makedirs("visualizations/generative", exist_ok=True)
     os.makedirs("visualizations/seq2seq", exist_ok=True)
+
+    # Set random seed for reproducibility
+    torch.manual_seed(42)
 
     # Classification Example
     print("\nAnalyzing classification model...")
