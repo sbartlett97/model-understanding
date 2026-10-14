@@ -40,6 +40,9 @@ ENV/
 .ipynb_checkpoints
 *.ipynb
 
+# Test artifacts
+.pytest_cache/
+
 # Visualization outputs
 visualizations/
 *.png
