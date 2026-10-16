@@ -19,8 +19,8 @@ This repository provides tools for exploring and understanding transformer-based
 Clone the repository and install the required dependencies:
 
 ```bash
-git clone https://github.com/sbartlet97/model-visualization.git
-cd model-visualization
+git clone https://github.com/sbartlet97/model_understanding.git
+cd model_understanding
 pip install -r requirements.txt
 ```
 
